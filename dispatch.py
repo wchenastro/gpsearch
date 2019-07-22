@@ -3,7 +3,7 @@
 import sys, os, signal
 import subprocess
 import logging
-import argparse
+import argparse, ConfigParser
 
 import notify
 
@@ -37,22 +37,15 @@ def parseOptions(parser):
 
     args = parser.parse_args()
 
-basePath ='/home/psr/workspace'
-dataPath = basePath + '/data/20190511/J2229+6114'
-# dataPath = basePath + '/data/20190511/J2215+5135'
-# resultPath = basePath + '/search'
-resultPath = basePath + '/fold'
-logPath = basePath + '/logs'
+section = sys.argv[4]
 
-#dsprCommand = "dspsr -E %s/pulsar.par -P %s/t2pred.dat \
-#	 -F 256:D -t 16 -s -minram=4 -J %s/gpsearch.sh " % (basePath, basePath, basePath)
-
-# dsprCommand = "dspsr -F 256:D -t 16 -s -K -minram=4 -J %s/gpsearch.sh " % basePath
-# dsprCommand = "dspsr -F 32:D -b 8192 -D 71.0179 -t 16 -s -K -minram=8 -J %s/gpsearch.sh " % basePath
-dsprCommand = "dspsr -F 256:D -E %s/J2229+6114.par -t 16 -minram=4 -L 10 -A " % basePath
-# dsprCommand = "dspsr -F 256:D -E %s/J2215+5135.par -t 16 -minram=4 -L 10 -A " % basePath
-# dsprCommand = "dspsr -F 256:D  -c 0.051666999654 -D 204.468 -t 16 -minram=4 -L 10 -A "
-# dsprCommand = "dspsr -F 32:D -b 8192 -E %s/J2229+6114.par -t 16 -s -K -minram=8 -J %s/gpsearch.sh " %  (basePath, basePath)
+config = ConfigParser.ConfigParser()
+config.read("jobCommand")
+configItems = dict(config.items(section))
+dataPath = configItems['datapath']
+resultPath = configItems['resultpath']
+logPath = configItems['logpath']
+command = configItems['command']
 
 stackInterval = int(sys.argv[1])
 thisPart = sys.argv[2]
@@ -69,7 +62,6 @@ logging.basicConfig(filename=logsFileName , format = loggerFormat, level=logging
 logger = logging.getLogger(__name__)
 
 hostname = os.uname()[1]
-
 
 logger.debug("job started at %s with parameters %s" % (hostname, " ".join(sys.argv)))
 if(not os.path.isdir(outputPath)):
@@ -100,7 +92,7 @@ retryCount = 0
 processCount = 0
 for segment in segments:
     #thisFileList = ' '.join(segment)
-    #os.system(dsprCommand + thisFileList)
+    #os.system(command + thisFileList)
     stackNum = len(segment)
     stackIdx = 0
     while stackIdx < stackNum:
@@ -113,7 +105,7 @@ for segment in segments:
 
         thisFileList = ' '.join(stackList)
         try:
-            output = subprocess.check_output(dsprCommand + thisFileList, shell=True)
+            output = subprocess.check_output(command + thisFileList, shell=True)
             #output = subprocess.check_output('exit 1', shell=True)
             #output = subprocess.check_output('ls', shell=True)
             retryCount = 0
