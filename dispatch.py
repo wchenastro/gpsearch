@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
-import sys, os, signal
+import sys, os, signal, json
 import subprocess
 import logging
 import argparse, ConfigParser
 
-import notify
+import notify2 as notify
 
 if len(sys.argv) < 4:
     print("insufficient arguments")
@@ -45,14 +45,14 @@ configItems = dict(config.items(section))
 dataPath = configItems['datapath']
 resultPath = configItems['resultpath']
 logPath = configItems['logpath']
-command = configItems['command']
+commands = json.loads(configItems['commands'])
 
 stackInterval = int(sys.argv[1])
 thisPart = sys.argv[2]
 totalParts = sys.argv[3]
 outputPath = resultPath + '/' + thisPart
 
-
+timeConsistance = False
 logsFileName = logPath + '/log'
 if os.path.isfile(logsFileName):
     if os.path.getsize(logsFileName) > 2000000:
@@ -78,13 +78,16 @@ if groupEnd > fileNum:
 thisGroup = allFiles[groupStart:groupEnd]
 
 segments = []
-currentTime = ''
-for dataFile in thisGroup:
-    dataTime = dataFile.split('/')[-1].split('_')[0]
-    if dataTime != currentTime:
-        segments.append([])
-        currentTime = dataTime
-    segments[-1].append(dataFile)
+if timeConsistance == True:
+    currentTime = ''
+    for dataFile in thisGroup:
+        dataTime = dataFile.split('/')[-1].split('_')[0]
+        if dataTime != currentTime:
+            segments.append([])
+            currentTime = dataTime
+        segments[-1].append(dataFile)
+else:
+    segments = [thisGroup]
 
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_kill_handler)
@@ -104,31 +107,42 @@ for segment in segments:
         stackIdx = stackEnd
 
         thisFileList = ' '.join(stackList)
-        try:
-            output = subprocess.check_output(command + thisFileList, shell=True)
-            #output = subprocess.check_output('exit 1', shell=True)
-            #output = subprocess.check_output('ls', shell=True)
-            retryCount = 0
-            processCount += len(stackList)
-            #logger.debug("finished on these files: %s at %s" % (thisFileList, hostname))
-        except subprocess.CalledProcessError as e:
-        #process = subprocess.Popen('exit 1', shell=True, stderr=subprocess.PIPE)
-        #if process.returncode != 0:
-            message = "job exits unexpected at %s" % hostname
-            logger.debug(message)
-	    notify.send("job exits", message, "dspsr@pacifix")
-            # logger.debug(output)
-            if retryCount < 10:
-                retryCount = retryCount + 1
-                logger.debug(e.strerror)
-                logger.debug("retry the file")
-                stackIdx = stackIdx - stackInterval
-            else:
+        for command in commands:
+            try:
+                print command.format(thisFileList)
+                output = subprocess.check_output(command.format(thisFileList), shell=True)
+                #output = subprocess.check_output('exit 1', shell=True)
+                #output = subprocess.check_output('ls', shell=True)
                 retryCount = 0
-                logger.debug("max retry reached, skip files: %s at %s" % (thisFileList, hostname))
-        #logger.debug("job finished a segment at %s" % hostname)
+                processCount += len(stackList)
+                #logger.debug("finished on these files: %s at %s" % (thisFileList, hostname))
+                if retryCount != 0:
+                    retryCount = 0
+                    messageToSend = "stopped and resumes on files: %s at %s with command: %s" % (
+                                                        thisFileList, hostname, command)
+                    notify.send("job exits and resumes", message, "dspsr@pacifix")
+            except subprocess.CalledProcessError as e:
+            #process = subprocess.Popen('exit 1', shell=True, stderr=subprocess.PIPE)
+            #if process.returncode != 0:
+                message = "job exits unexpected at %s" % hostname
+                logger.debug(message)
+                # notify.send("job exits", message, "dspsr@pacifix")
+                # logger.debug(output)
+                if retryCount < 10:
+                    retryCount = retryCount + 1
+                    logger.debug(str(e))
+                    logger.debug("retry the file")
+                    stackIdx = stackIdx - stackInterval
+                else:
+                    retryCount = 0
+                    message = "max retry reached, skip files: %s at %s with command: %s" % (
+                                                     thisFileList, hostname, command)
+                    logger.debug(message)
+                    notify.send("job skipped", message, "dspsr@pacifix")
+                break
+            #logger.debug("job finished a segment at %s" % hostname)
 
-message = "job stopped at %s after successfully processing %d files with parameters %s" % (
-                hostname, processCount, " ".join(sys.argv))
+message = "job stopped at %s after successfully processing %d files with parameters %s and command: %s " % (
+            hostname, processCount, " ".join(sys.argv), command)
 logger.debug(message)
 notify.send("job stopped", message, "dspsr@pacifix")
