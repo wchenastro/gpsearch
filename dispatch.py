@@ -5,7 +5,7 @@ import subprocess
 import logging
 import argparse, ConfigParser
 
-import notify2 as notify
+import notify
 
 if len(sys.argv) < 4:
     print("insufficient arguments")
@@ -42,15 +42,17 @@ section = sys.argv[4]
 config = ConfigParser.ConfigParser()
 config.read("jobCommand")
 configItems = dict(config.items(section))
-dataPath = configItems['datapath']
-resultPath = configItems['resultpath']
-logPath = configItems['logpath']
+dataPath = configItems['data_path']
+candiatePath = configItems['candidate_path']
+intermediatePath = configItems['intermediate_path']
+logPath = configItems['log_path']
+pathPrefix = configItems['path_prefix']
 commands = json.loads(configItems['commands'])
 
 stackInterval = int(sys.argv[1])
 thisPart = sys.argv[2]
 totalParts = sys.argv[3]
-outputPath = resultPath + '/' + thisPart
+outputPath = candiatePath + '/' + thisPart
 
 timeConsistance = False
 logsFileName = logPath + '/log'
@@ -64,9 +66,9 @@ logger = logging.getLogger(__name__)
 hostname = os.uname()[1]
 
 logger.debug("job started at %s with parameters %s" % (hostname, " ".join(sys.argv)))
-if(not os.path.isdir(outputPath)):
-    os.mkdir(outputPath)
-os.chdir(outputPath)
+# if(not os.path.isdir(outputPath)):
+    # os.mkdir(outputPath)
+# os.chdir(outputPath)
 allFiles = [os.path.join(dataPath, fileName) for fileName in os.listdir(dataPath)]
 allFiles.sort()
 fileNum = len(allFiles)
@@ -93,9 +95,9 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_kill_handler)
 retryCount = 0
 processCount = 0
+retryLimit = 10
+sender = "gpsearch@numerix0"
 for segment in segments:
-    #thisFileList = ' '.join(segment)
-    #os.system(command + thisFileList)
     stackNum = len(segment)
     stackIdx = 0
     while stackIdx < stackNum:
@@ -108,41 +110,35 @@ for segment in segments:
 
         thisFileList = ' '.join(stackList)
         for command in commands:
-            try:
-                print command.format(thisFileList)
-                output = subprocess.check_output(command.format(thisFileList), shell=True)
-                #output = subprocess.check_output('exit 1', shell=True)
-                #output = subprocess.check_output('ls', shell=True)
-                retryCount = 0
-                processCount += len(stackList)
-                #logger.debug("finished on these files: %s at %s" % (thisFileList, hostname))
-                if retryCount != 0:
-                    retryCount = 0
-                    messageToSend = "stopped and resumes on files: %s at %s with command: %s" % (
-                                                        thisFileList, hostname, command)
-                    notify.send("job exits and resumes", message, "dspsr@pacifix")
-            except subprocess.CalledProcessError as e:
-            #process = subprocess.Popen('exit 1', shell=True, stderr=subprocess.PIPE)
-            #if process.returncode != 0:
-                message = "job exits unexpected at %s" % hostname
-                logger.debug(message)
-                # notify.send("job exits", message, "dspsr@pacifix")
-                # logger.debug(output)
-                if retryCount < 10:
-                    retryCount = retryCount + 1
-                    logger.debug(str(e))
-                    logger.debug("retry the file")
-                    stackIdx = stackIdx - stackInterval
-                else:
-                    retryCount = 0
-                    message = "max retry reached, skip files: %s at %s with command: %s" % (
-                                                     thisFileList, hostname, command)
+            for attempt in range(retryLimit):
+                try:
+                    print command.format(thisFileList, intermediatePath,
+                            candiatePath, pathPrefix)
+                    # output = subprocess.check_output(
+                            # command.format(thisFileList), shell=True)
+                    if attempt != 0:
+                        messageToSend = ("stopped and resumes on files: %s"
+                                        "at %s with command: %s") % (
+                                        thisFileList, hostname, command)
+                        notify.send("job exits and resumes", message, sender)
+                except subprocess.CalledProcessError as e:
+                    message = "job exits unexpected at %s" % hostname
                     logger.debug(message)
-                    notify.send("job skipped", message, "dspsr@pacifix")
+                    logger.debug(str(e))
+                    logger.debug("retry the command")
+                else:
+                    # the file is successfully processed."
+                    break
+            else:
+                message = ("max retry reached, skip files: %s at %s"
+                          "with command: %s") % (thisFileList, hostname, command)
+                logger.debug(message)
+                notify.send("job skipped", message, sender)
                 break
-            #logger.debug("job finished a segment at %s" % hostname)
+            processCount += len(stackList)
 
-message = "job stopped at %s after successfully processing %d files with parameters %s and command: %s " % (
-            hostname, processCount, " ".join(sys.argv), command)
+message = ("job stopped at %s after successfully processing %d files "
+          "with parameters %s and command: %s ") % (
+            hostname, processCount, " ".join(sys.argv), " ".join(commands))
 logger.debug(message)
-notify.send("job stopped", message, "dspsr@pacifix")
+notify.send("job stopped", message, sender)
