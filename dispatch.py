@@ -1,21 +1,23 @@
 #!/usr/bin/env python
 
-import sys, os, signal, json
+import sys, os, signal
 import subprocess
 import logging
 import argparse, ConfigParser
 
 import notify
 
-if len(sys.argv) < 4:
-    print("insufficient arguments")
-    exit(-1)
-if int(sys.argv[1]) < 1:
-    print("interval should not be less then 1")
-    exit(-1)
+# if len(sys.argv) < 4:
+    # print("insufficient arguments")
+    # exit(-1)
+# if int(sys.argv[1]) < 1:
+    # print("interval should not be less then 1")
+    # exit(-1)
 
 def signal_handler(sig, frame):
     logger.debug("job was cancelled by user at %s" % hostname)
+    print("job was cancelled by user at %s" % hostname)
+    process.terminate()
     sys.exit(0)
 
 def signal_kill_handler(sig, frame):
@@ -24,34 +26,50 @@ def signal_kill_handler(sig, frame):
     notify.send("job killed", message, "dspsr@pacifix")
     sys.exit(0)
 
+def parseCommand(commandString):
+    commands = commandString.split(",")
+    return commands
 
-def parseOptions(parser):
-    parser.add_argument('--data', nargs=1, metavar="directory", help='dada file directory')
-    parser.add_argument('--output', nargs=1, metavar="directory", help='output file directory')
-    parser.add_argument('--sub', nargs=1, metavar="directory", help='sub directory for output')
-    parser.add_argument('--total', nargs=1, metavar="num", help="total parts")
-    parser.add_argument('--part', nargs=1, metavar="num", help="part index")
+
+def parseOptions():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--group', '-g', nargs=1, metavar="num", help='number of files procesesd together')
+    parser.add_argument('--total', '-t', nargs=1, metavar="num", help="total parts")
+    parser.add_argument('--part', '-p', nargs=1, metavar="num", help="part index")
+    parser.add_argument('--job', '-j', nargs=1, metavar="jobFile", help="job file for the pipeline")
+    parser.add_argument('--section', '-s', nargs=1, metavar="section", help="section name inside the job file")
+    parser.add_argument('--continue', '-c', action="store_true", help="wether to continue on previous process")
     parser.add_argument('--thread', nargs=1, metavar="num", help="thread number, default: none")
-    parser.add_argument('--group', nargs=1, metavar="num", help="number of file of each iteration")
-    parser.add_argument('--channel', nargs=1, metavar="num", help="number of channel")
 
     args = parser.parse_args()
 
-section = sys.argv[4]
+    if None in (args.group, args.total, args.part, args.job, args.section):
+        parser.error("insufficient arguments")
+
+    return args
+
+args = parseOptions()
+
+section = args.section[0]
 
 config = ConfigParser.ConfigParser()
-config.read("jobCommand")
+config.read(args.job[0])
 configItems = dict(config.items(section))
 dataPath = configItems['data_path']
 candiatePath = configItems['candidate_path']
 intermediatePath = configItems['intermediate_path']
 logPath = configItems['log_path']
 pathPrefix = configItems['path_prefix']
-commands = json.loads(configItems['commands'])
+dataFileList = configItems.get('file_list', None)
 
-stackInterval = int(sys.argv[1])
-thisPart = sys.argv[2]
-totalParts = sys.argv[3]
+commands = parseCommand(configItems['commands'])
+# exit(0)
+# commands = json.loads(configItems['commands'])
+
+
+stackInterval = args.group[0]
+thisPart = args.part[0]
+totalParts = args.total[0]
 outputPath = candiatePath + '/' + thisPart
 
 timeConsistance = False
@@ -65,12 +83,19 @@ logger = logging.getLogger(__name__)
 
 hostname = os.uname()[1]
 
-logger.debug("job started at %s with parameters %s" % (hostname, " ".join(sys.argv)))
+logger.debug("job started at %s with parameters %s" % (hostname + thisPart,
+            " ".join([stackInterval, thisPart, totalParts, section])))
 # if(not os.path.isdir(outputPath)):
     # os.mkdir(outputPath)
 # os.chdir(outputPath)
-allFiles = [os.path.join(dataPath, fileName) for fileName in os.listdir(dataPath)]
-allFiles.sort()
+
+if dataFileList is not None:
+    with open(dataFileList, 'r') as fileListObj:
+        allFiles = [line.strip() for line in fileListObj]
+else:
+    allFiles = [os.path.join(dataPath, fileName) for fileName in os.listdir(dataPath)]
+    allFiles.sort()
+
 fileNum = len(allFiles)
 groupSize = fileNum/int(totalParts) + (1 if (fileNum % int(totalParts)) > 0 else 0)
 groupStart = int(thisPart)*groupSize
@@ -101,7 +126,7 @@ for segment in segments:
     stackNum = len(segment)
     stackIdx = 0
     while stackIdx < stackNum:
-        stackEnd = stackIdx + stackInterval
+        stackEnd = stackIdx + int(stackInterval)
         if stackEnd < stackNum:
             stackList = segment[stackIdx:stackEnd]
         else:
@@ -111,23 +136,21 @@ for segment in segments:
         thisFileList = ' '.join(stackList)
         for command in commands:
             for attempt in range(retryLimit):
-                try:
-                    print command.format(thisFileList, intermediatePath,
-                            candiatePath, pathPrefix)
-                    # output = subprocess.check_output(
-                            # command.format(thisFileList), shell=True)
-                    if attempt != 0:
-                        messageToSend = ("stopped and resumes on files: %s"
-                                        "at %s with command: %s") % (
-                                        thisFileList, hostname, command)
-                        notify.send("job exits and resumes", message, sender)
-                except subprocess.CalledProcessError as e:
+                cmd = command.format(thisFileList, intermediatePath,
+                            candiatePath, pathPrefix, thisPart)
+                process = subprocess.Popen(cmd,stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE, shell=True)
+                for line in iter(process.stdout.readline, ''):
+                    sys.stdout.write(line)
+                outs, errs = process.communicate()
+                if process.returncode != 0:
                     message = "job exits unexpected at %s" % hostname
                     logger.debug(message)
-                    logger.debug(str(e))
+                    logger.debug(errs)
                     logger.debug("retry the command")
+                    print(errs)
                 else:
-                    # the file is successfully processed."
+                    '''files are successfully procesesd.'''
                     break
             else:
                 message = ("max retry reached, skip files: %s at %s"
@@ -139,6 +162,6 @@ for segment in segments:
 
 message = ("job stopped at %s after successfully processing %d files "
           "with parameters %s and command: %s ") % (
-            hostname, processCount, " ".join(sys.argv), " ".join(commands))
+            hostname, processCount, " ".join([stackInterval, thisPart, totalParts, section]), " ".join(commands))
 logger.debug(message)
 notify.send("job stopped", message, sender)
