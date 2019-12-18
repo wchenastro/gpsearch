@@ -158,10 +158,12 @@ for segment in segments:
                 logger.debug(message)
                 notify.send("job skipped", message, sender)
                 break
-            processCount += len(stackList)
+        processCount += len(stackList)
+        print("procesesd: {}, remain: {}".format(
+                    processCount, len(thisGroup) - processCount))
 
-message = ("job stopped at %s after successfully processing %d files "
+message = ("job stopped at %s after processing %d files "
           "with parameters %s and command: %s ") % (
-            hostname, processCount, " ".join([stackInterval, thisPart, totalParts, section]), " ".join(commands))
+            hostname, processCount," ".join([stackInterval, thisPart, totalParts, section]), " ".join(commands))
 logger.debug(message)
 notify.send("job stopped", message, sender)
