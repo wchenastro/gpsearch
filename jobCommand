@@ -1,11 +1,11 @@
-[2229]
-file_list = /fpra/bband/01/wchen/workspace/gpsearch/J2229+6114_DADA
-data_path = pulsar@paf0:/beegfs/BASEBAND/paf0/108-18/20190301/J2229+6114
+[2215]
+file_list = /fpra/bband/01/wchen/workspace/gpsearch/J2215+5135_DADA
+data_path = pulsar@paf1:/beegfs/BASEBAND/paf0/108-18/20190301/J2215+5135
 intermediate_path = /fpra/bband/01/wchen/workspace/gpsearch/intermediate
 candidate_path = /fpra/bband/01/wchen/workspace/gpsearch/candidate
 log_path = /fpra/bband/01/wchen/workspace/gpsearch/logs
 base_path = /fpra/bband/01/wchen/workspace/gpsearch
-path_prefix = 2229
+path_prefix = 2215
 notify = true
 commands =
         echo "`date`: scp the file to the local" &&
@@ -25,7 +25,116 @@ commands =
         echo "`date`: start dada file transmission at {4}" >>  {1}/{3}/log &&
         echo "`date`: start dada file transmission" &&
         for dadaFile in {0}; do
-            scp -l 560000 pulsar@paf0:$dadaFile {1}/{3}/dada;
+            scp -l 560000 pulsar@paf1:$dadaFile {1}/{3}/dada;
+            chmod u+w {1}/{3}/dada/`basename $dadaFile`
+        done
+        ,
+        echo "`date`: use digifil to convert dada file to filterbank file" &&
+        for dadaFile in {0}; do inputFile=`basename $dadaFile`;break;done &&
+        mkdir -p {1}/{3}/digifil &&
+        fileNames='' &&
+        for dadaFile in {0}; do
+            fileName="{1}/{3}/dada/"`basename $dadaFile`;
+            fileNames+="$fileName ";
+        done &&
+        outputDigifil="{1}/{3}/digifil/chan128t2b8_$inputFile.fil" &&
+        outputDigifilTemp="{1}/{3}/digifil/chan128t2b8_$inputFile.fil.tmp" &&
+        if test -f "$outputDigifil"; then
+            echo "$outputDigifil exist";
+            exit 0;
+        fi &&
+        rm -f $outputDigifilTemp &&
+        echo "`date`: start digifil conversion at {4}" >>  {1}/{3}/log &&
+        singularity exec --nv dspsr_fits_mt.sif digifil -F 128:D -D 69.1951 \
+           -o $outputDigifilTemp -t 2 -b 8 -d 1 $fileNames &&
+        mv $outputDigifilTemp $outputDigifil
+        ,
+        echo "`date`: use heimdall to find candidate" &&
+        for dadaFile in {0}; do inputFile=`basename $dadaFile`;break;done &&
+        outputHeimdall="{2}/{3}/$inputFile" &&
+        outputHeimdallTemp="{2}/{3}/$inputFile.tmp" &&
+        if test -d "$outputHeimdall"; then
+            echo "$outputHeimdall exist";
+            exit 0;
+        fi &&
+        mkdir -p $outputHeimdallTemp &&
+        echo "`date`: start heimdall search at {4}" >>  {1}/{3}/log  &&
+        LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/dedisp/lib/                   \
+        singularity exec --nv heimdall_latest.sif                       \
+           /heimdall/Applications/heimdall                              \
+           -dm 69.1751 69.2151 -dm_tol 1.00001 -dm_pulse_width 0.01         \
+           -zap_chans 80 128 -zap_chans 36 42 -v -nsamps_gulp 1000000   \
+           -f {1}/{3}/digifil/chan128t2b8_$inputFile.fil                \
+           -output_dir $outputHeimdallTemp -boxcar_max 4                    \
+           -min_tscrunch_width 100000000000000000000000                 \
+           -rfi_tol 10000000000000  -rfi_no_broad -no_scrunching  &&
+        mv $outputHeimdallTemp $outputHeimdall
+        ,
+        echo "`date`: refine the candiates" &&
+        for dadaFile in {0}; do inputFile=`basename $dadaFile`;break;done &&
+        outputHeimdall="{2}/{3}/$inputFile" &&
+        cat $outputHeimdall/*.cand > $outputHeimdall/all.cands &&
+        python refineCandidate.py -i $outputHeimdall/all.cands          \
+            -o $outputHeimdall/refined.cands -w 1087 -c 3
+        ,
+        echo "`date`: plot the refined candiates" &&
+        for dadaFile in {0}; do inputFile=`basename $dadaFile`;break;done &&
+        refinedCands="{2}/{3}/$inputFile/refined.cands" &&
+        plotDirectory="{2}/{3}/$inputFile/plots" &&
+        plotDirectoryTemp="{2}/{3}/$inputFile/plots.tmp" &&
+        if test -d "$plotDirectory"; then
+            echo "$plotDirectory exist";
+            exit 0;
+        fi &&
+        rm -rf $plotDirectoryTemp
+        mkdir -p $plotDirectoryTemp &&
+        mkdir -p "$plotDirectoryTemp/rfi" &&
+        LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/build/lib.linux-x86_64-2.7           \
+        singularity exec --nv sigpyproc_latest.sif                             \
+            python filterPlotMultiCand.py {1}/{3}/digifil/chan128t2b8_$inputFile.fil \
+            $refinedCands  $plotDirectoryTemp 69.1951 1087 58469 90 128 38 41 &&
+        mv $plotDirectoryTemp $plotDirectory
+        ,
+        echo "`date`: clean up the intermediate file" &&
+        for dadaFile in {0}; do inputFile=`basename $dadaFile`;break;done &&
+        outputDigifil="{1}/{3}/digifil/chan128t2b8_$inputFile.fil" &&
+        (echo "keep digifil file" || rm $outputDigifil) &&
+        for dadaFile in {0}; do
+            fileName="{1}/{3}/dada/"`basename $dadaFile`;
+            rm -f $fileName
+        done
+        ,
+        echo "`date`: pipeline finished at {4}" >>  {1}/{3}/log;
+        echo "`date`: pipeline finished" ;
+
+[2229]
+file_list = /fpra/bband/01/wchen/workspace/gpsearch/J2229+6114_DADA
+data_path = pulsar@paf0:/beegfs/BASEBAND/paf0/108-18/20190301/J2229+6114
+intermediate_path = /fpra/bband/01/wchen/workspace/gpsearch/intermediate
+candidate_path = /fpra/bband/01/wchen/workspace/gpsearch/candidate
+log_path = /fpra/bband/01/wchen/workspace/gpsearch/logs
+base_path = /fpra/bband/01/wchen/workspace/gpsearch
+path_prefix = 2229_2
+notify = true
+commands =
+        echo "`date`: scp the file to the local" &&
+        mkdir -p {1}/{3}/dada &&
+        echo "`date`: pipeline started at {4}" >>  {1}/{3}/log &&
+        sleep $(( ( RANDOM % 7 )  + 1 )) &&
+        for dadaFile in {0}; do inputFile=`basename $dadaFile`;break;done &&
+        outputDigifil="{1}/{3}/digifil/chan128t2b8_$inputFile.fil" &&
+        if test -f "$outputDigifil"; then
+            echo "$outputDigifil exist";
+            exit 0;
+        fi &&
+        echo "`date`: wait if there is other scp transmission" &&
+        while [ `ps axo command | grep "^scp.*{1}/{3}/dada" | wc -l` -gt 0 ]; do
+            sleep $(( ( RANDOM % 4 )  + 1 ))
+        done &&
+        echo "`date`: start dada file transmission at {4}" >>  {1}/{3}/log &&
+        echo "`date`: start dada file transmission" &&
+        for dadaFile in {0}; do
+            scp -l 560000 pulsar@paf1:$dadaFile {1}/{3}/dada;
             chmod u+w {1}/{3}/dada/`basename $dadaFile`
         done
         ,
@@ -86,6 +195,7 @@ commands =
             echo "$plotDirectory exist";
             exit 0;
         fi &&
+        rm -rf $plotDirectoryTemp
         mkdir -p $plotDirectoryTemp &&
         mkdir -p "$plotDirectoryTemp/rfi" &&
         LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/build/lib.linux-x86_64-2.7           \
@@ -161,12 +271,18 @@ intermediate_path = /fpra/bband/01/wchen/workspace/gpsearch/intermediate
 candidate_path = /fpra/bband/01/wchen/workspace/gpsearch/candidate
 log_path = /fpra/bband/01/wchen/workspace/gpsearch/logs
 base_path = /fpra/bband/01/wchen/workspace/gpsearch
-path_prefix = test
+path_prefix = 1937
 commands =
-        echo "`date`: pipeline started at {4}" >>  {1}/{3}/log &&
         echo "`date`: scp the file to the local" &&
         mkdir -p {1}/{3}/dada &&
+        echo "`date`: pipeline started at {4}" >>  {1}/{3}/log &&
         sleep $(( ( RANDOM % 7 )  + 1 )) &&
+        for dadaFile in {0}; do inputFile=`basename $dadaFile`;break;done &&
+        outputDigifil="{1}/{3}/digifil/chan128t2b8_$inputFile.fil" &&
+        if test -f "$outputDigifil"; then
+            echo "$outputDigifil exist";
+            exit 0;
+        fi &&
         echo "`date`: wait if there is other scp transmission" &&
         while [ `ps axo command | grep "^scp.*{1}/{3}/dada" | wc -l` -gt 0 ]; do
             sleep $(( ( RANDOM % 4 )  + 1 ))
@@ -174,7 +290,7 @@ commands =
         echo "`date`: start dada file transmission at {4}" >>  {1}/{3}/log &&
         echo "`date`: start dada file transmission" &&
         for dadaFile in {0}; do
-            scp -l 560000 pulsar@paf0:$dadaFile {1}/{3}/dada;
+            scp -l 560000 pulsar@paf1:$dadaFile {1}/{3}/dada;
             chmod u+w {1}/{3}/dada/`basename $dadaFile`
         done
         ,
@@ -187,15 +303,26 @@ commands =
             fileNames+="$fileName ";
         done &&
         outputDigifil="{1}/{3}/digifil/chan128t2b8_$inputFile.fil" &&
-        rm -f $outputDigifil &&
+        outputDigifilTemp="{1}/{3}/digifil/chan128t2b8_$inputFile.fil.tmp" &&
+        if test -f "$outputDigifil"; then
+            echo "$outputDigifil exist";
+            exit 0;
+        fi &&
+        rm -f $outputDigifilTemp &&
         echo "`date`: start digifil conversion at {4}" >>  {1}/{3}/log &&
-        singularity exec --nv dspsr_fits_mt.sif digifil -F 128:D -D 71.0179 \
-           -o $outputDigifil -t 2 -b 8 -d 1 $fileNames
+        singularity exec --nv dspsr_fits_mt.sif digifil -F 128:D -D 71.0178 \
+           -o $outputDigifilTemp -t 2 -b 8 -d 1 $fileNames &&
+        mv $outputDigifilTemp $outputDigifil
         ,
         echo "`date`: use heimdall to find candidate" &&
         for dadaFile in {0}; do inputFile=`basename $dadaFile`;break;done &&
         outputHeimdall="{2}/{3}/$inputFile" &&
-        mkdir -p $outputHeimdall &&
+        outputHeimdallTemp="{2}/{3}/$inputFile.tmp" &&
+        if test -d "$outputHeimdall"; then
+            echo "$outputHeimdall exist";
+            exit 0;
+        fi &&
+        mkdir -p $outputHeimdallTemp &&
         echo "`date`: start heimdall search at {4}" >>  {1}/{3}/log  &&
         LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/dedisp/lib/                   \
         singularity exec --nv heimdall_latest.sif                       \
@@ -203,9 +330,10 @@ commands =
            -dm 71.00 71.05 -dm_tol 1.00001 -dm_pulse_width 0.01         \
            -zap_chans 80 128 -zap_chans 36 42 -v -nsamps_gulp 1000000   \
            -f {1}/{3}/digifil/chan128t2b8_$inputFile.fil                \
-           -output_dir $outputHeimdall -boxcar_max 4                    \
+           -output_dir $outputHeimdallTemp -boxcar_max 4                    \
            -min_tscrunch_width 100000000000000000000000                 \
-           -rfi_tol 10000000000000  -rfi_no_broad -no_scrunching
+           -rfi_tol 10000000000000  -rfi_no_broad -no_scrunching &&
+        mv $outputHeimdallTemp $outputHeimdall
         ,
         echo "`date`: refine the candiates" &&
         for dadaFile in {0}; do inputFile=`basename $dadaFile`;break;done &&
@@ -218,19 +346,27 @@ commands =
         for dadaFile in {0}; do inputFile=`basename $dadaFile`;break;done &&
         refinedCands="{2}/{3}/$inputFile/refined.cands" &&
         plotDirectory="{2}/{3}/$inputFile/plots" &&
-        mkdir -p $plotDirectory &&
+        plotDirectoryTemp="{2}/{3}/$inputFile/plots.tmp" &&
+        if test -d "$plotDirectory"; then
+            echo "$plotDirectory exist";
+            exit 0;
+        fi &&
+        rm -rf $plotDirectoryTemp
+        mkdir -p $plotDirectoryTemp &&
+        mkdir -p "$plotDirectoryTemp/rfi" &&
         LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/build/lib.linux-x86_64-2.7           \
         singularity exec --nv sigpyproc_latest.sif                             \
-            python plotMultiCand.py {1}/{3}/digifil/chan128t2b8_$inputFile.fil \
-            $refinedCands  $plotDirectory 71.0178 192 143360 90 128 38 41
+            python filterPlotMultiCand.py {1}/{3}/digifil/chan128t2b8_$inputFile.fil \
+            $refinedCands  $plotDirectoryTemp 71.0178 192 143360 90 128 38 41 &&
+        mv $plotDirectoryTemp $plotDirectory
         ,
         echo "`date`: clean up the intermediate file" &&
         for dadaFile in {0}; do inputFile=`basename $dadaFile`;break;done &&
         outputDigifil="{1}/{3}/digifil/chan128t2b8_$inputFile.fil" &&
-        rm $outputDigifil &&
+        (echo "keep digifil file" || rm $outputDigifil) &&
         for dadaFile in {0}; do
             fileName="{1}/{3}/dada/"`basename $dadaFile`;
-            rm  $fileName
+            rm -f $fileName
         done
         ,
         echo "`date`: pipeline finished at {4}" >>  {1}/{3}/log;
