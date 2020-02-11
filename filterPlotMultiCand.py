@@ -60,15 +60,16 @@ for cand in cands:
 
     if score > 1.5:
         rfi = True
+        continue
 
-    if rfi != True and pulseWidth != 0:
-        convolveWdith = pulseWidth if pulseWidth < maxWindow else maxWindow
-        for chan in range(len(dblock)):
-            try:
-                dblock[chan] = np.convolve(
-                        dblock[chan], np.ones(convolveWdith), 'same')
-            except:
-                pass
+    # if rfi != True and pulseWidth != 0:
+        # convolveWdith = pulseWidth if pulseWidth < maxWindow else maxWindow
+        # for chan in range(len(dblock)):
+            # try:
+                # dblock[chan] = np.convolve(
+                        # dblock[chan], np.ones(convolveWdith), 'same')
+            # except:
+                # pass
     fig = plt.figure(constrained_layout=True)
     gridspec = GridSpec.GridSpec(ncols=5, nrows=5, figure=fig,  wspace=0.0, hspace=0.0)
     ax_top = fig.add_subplot(gridspec[0, 0:4])
@@ -89,7 +90,8 @@ for cand in cands:
     plt.subplots_adjust(top=0.90, left=0.1, bottom=0.1)
     ax_center.set_xlabel('bin')
     ax_center.set_ylabel('channel')
-    if rfi != True:
-        plt.savefig("{}/{}.png".format(plotDirectory, candIndex))
-    else:
-        plt.savefig("{}/rfi/{}.png".format(plotDirectory, candIndex))
+    plt.savefig("{}/{}.png".format(plotDirectory, candIndex))
+    # if rfi != True:
+        # plt.savefig("{}/{}.png".format(plotDirectory, candIndex))
+    # else:
+        # plt.savefig("{}/rfi/{}.png".format(plotDirectory, candIndex))

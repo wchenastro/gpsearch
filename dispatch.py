@@ -4,15 +4,17 @@ import sys, os, signal
 import subprocess
 import logging
 import argparse, ConfigParser
+from multiprocessing import Process, active_children
+# from threading import Thread
 
 import notify
 
-# if len(sys.argv) < 4:
-    # print("insufficient arguments")
-    # exit(-1)
-# if int(sys.argv[1]) < 1:
-    # print("interval should not be less then 1")
-    # exit(-1)
+def runInOtherThread(function, args):
+    t = Process(target=function, args=args)
+    t.start()
+
+def checkChildren(sig, frame):
+    active_children()
 
 def signal_handler(sig, frame):
     logger.debug("job was cancelled by user at %s" % hostname)
@@ -23,7 +25,7 @@ def signal_handler(sig, frame):
 def signal_kill_handler(sig, frame):
     message = "job was kill at %s" % hostname
     logger.debug(message)
-    notify.send("job killed", message, "dspsr@pacifix")
+    notify.sendMail("job killed", message, "dspsr@pacifix")
     sys.exit(0)
 
 def parseCommand(commandString):
@@ -60,6 +62,8 @@ candiatePath = configItems['candidate_path']
 intermediatePath = configItems['intermediate_path']
 logPath = configItems['log_path']
 pathPrefix = configItems['path_prefix']
+instance = configItems['instance']
+sendNotify = configItems['notify']
 dataFileList = configItems.get('file_list', None)
 
 commands = parseCommand(configItems['commands'])
@@ -118,6 +122,7 @@ else:
 
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_kill_handler)
+signal.signal(signal.SIGCHLD, checkChildren)
 retryCount = 0
 processCount = 0
 retryLimit = 10
@@ -156,14 +161,18 @@ for segment in segments:
                 message = ("max retry reached, skip files: %s at %s"
                           "with command: %s") % (thisFileList, hostname, command)
                 logger.debug(message)
-                notify.send("job skipped", message, sender)
+                runInOtherThread(notify.sendMail, ("job skipped", message, sender))
                 break
         processCount += len(stackList)
-        print("procesesd: {}, remain: {}".format(
+        message = ("procesesd: {}, remain: {}".format(
                     processCount, len(thisGroup) - processCount))
+        if sendNotify == 'true':
+            runInOtherThread(notify.sendWeb, (thisPart + "@gpsearch", message, instance))
+        print(message)
 
 message = ("job stopped at %s after processing %d files "
           "with parameters %s and command: %s ") % (
             hostname, processCount," ".join([stackInterval, thisPart, totalParts, section]), " ".join(commands))
 logger.debug(message)
-notify.send("job stopped", message, sender)
+if sendNotify == 'true':
+    notify.sendMail("job stopped", message, sender)
