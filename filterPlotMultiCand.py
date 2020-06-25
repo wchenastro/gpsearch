@@ -45,8 +45,9 @@ for cand in cands:
     width = dblock.shape[1]
     score = 0
     rfi = False
+    weak = False
     bscrunch = dblock.sum(axis=1)
-    # fscrunch = dblock.sum(axis=0)
+    fscrunch = dblock.sum(axis=0)
     # average = 1.* bscrunch.sum() / (height * width)
     bscrunch80max = bscrunch.max()*0.98
     channelStrong = np.where(bscrunch > bscrunch80max)[0]
@@ -60,7 +61,18 @@ for cand in cands:
 
     if score > 1.5:
         rfi = True
-        continue
+        # continue
+
+    binNum = len(fscrunch)
+    onPulseHalfWidth = int(binNum*0.1/2.)
+    fscrunchMax = fscrunch.max()
+    fscrunchMaxIndex = np.argmax(fscrunch)
+    offPulseRange = np.r_[0:fscrunchMaxIndex-onPulseHalfWidth, fscrunchMaxIndex+onPulseHalfWidth:binNum-1]
+    fscrunchOffPulse = fscrunch[offPulseRange]
+    ratio = (fscrunch - fscrunchOffPulse.mean()) / fscrunchOffPulse.std()
+    signalHeight = ratio.max()
+    if signalHeight < 4:
+        weak = True
 
     # if rfi != True and pulseWidth != 0:
         # convolveWdith = pulseWidth if pulseWidth < maxWindow else maxWindow
@@ -75,7 +87,7 @@ for cand in cands:
     ax_top = fig.add_subplot(gridspec[0, 0:4])
     ax_center = fig.add_subplot(gridspec[1:, 0:4])
     ax_right = fig.add_subplot(gridspec[1:, 4:])
-    ax_top.plot(range(dblock.shape[1]), dblock.sum(axis=0), "k", lw=0.7)
+    ax_top.plot(range(dblock.shape[1]), fscrunch, "k", lw=0.7)
     ax_top.margins(x=0)
     ax_top.set_xticks([])
     ax_top.set_yticks([])
@@ -90,8 +102,10 @@ for cand in cands:
     plt.subplots_adjust(top=0.90, left=0.1, bottom=0.1)
     ax_center.set_xlabel('bin')
     ax_center.set_ylabel('channel')
-    plt.savefig("{}/{}.png".format(plotDirectory, candIndex))
-    # if rfi != True:
-        # plt.savefig("{}/{}.png".format(plotDirectory, candIndex))
-    # else:
-        # plt.savefig("{}/rfi/{}.png".format(plotDirectory, candIndex))
+    # plt.savefig("{}/{}.png".format(plotDirectory, candIndex))
+    if rfi == True:
+        plt.savefig("{}/rfi/{}.png".format(plotDirectory, candIndex))
+    elif weak == True:
+        plt.savefig("{}/weak/{}.png".format(plotDirectory, candIndex))
+    else:
+        plt.savefig("{}/cand/{}.png".format(plotDirectory, candIndex))

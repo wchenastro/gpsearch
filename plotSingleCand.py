@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import sys, csv
+import sys, csv, os
 from sigpyproc import FilReader
 from matplotlib import pyplot as plt
 import matplotlib.gridspec as gridspec
@@ -16,6 +16,7 @@ fullSpan = int(sys.argv[6])
 width = int(sys.argv[7])
 rfiChanStart = 8
 
+basename = os.path.basename(filFileName)
 filReader = FilReader(filFileName)
 center = int(candIndex)
 span = (center - fullSpan/2, center + fullSpan/2)
@@ -31,9 +32,9 @@ if len(sys.argv) >= rfiChanStart:
     chans = sys.argv[rfiChanStart:]
     for i in range(0, len(chans), 2):
         dblock[int(chans[i]):int(chans[i+1]), :] = avgValue
-if width != 0:
-    for chan in range(len(dblock)):
-        dblock[chan] = np.convolve(dblock[chan], np.ones(width), 'same')
+# if width != 0:
+    # for chan in range(len(dblock)):
+        # dblock[chan] = np.convolve(dblock[chan], np.ones(width), 'same')
 fig = plt.figure(constrained_layout=True)
 gridspec = gridspec.GridSpec(ncols=5, nrows=5, figure=fig,  wspace=0.0, hspace=0.0)
 ax_top = fig.add_subplot(gridspec [0, 0:4])
@@ -49,6 +50,11 @@ ax_right.margins(y=0)
 ax_right.set_xticks([])
 ax_right.set_yticks([])
 plt.tight_layout()
+plt.suptitle("{0}\n index: {1}, DM: {2}".format(
+                        basename, candIndex, DM))
+plt.subplots_adjust(top=0.90, left=0.1, bottom=0.1)
+ax_center.set_xlabel('bin')
+ax_center.set_ylabel('channel')
 if plotDirectory == "0":
     plt.show()
 else:

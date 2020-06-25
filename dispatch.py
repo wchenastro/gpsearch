@@ -127,6 +127,9 @@ retryCount = 0
 processCount = 0
 retryLimit = 10
 sender = "gpsearch@numerix0"
+if sendNotify == 'true':
+    runInOtherThread(notify.sendWeb,
+            (thisPart + "@gpsearch", "job {} started".format(section), instance))
 for segment in segments:
     stackNum = len(segment)
     stackIdx = 0
@@ -176,3 +179,6 @@ message = ("job stopped at %s after processing %d files "
 logger.debug(message)
 if sendNotify == 'true':
     notify.sendMail("job stopped", message, sender)
+    runInOtherThread(notify.sendWeb,
+            (thisPart + "@gpsearch", "job {} stopped".format(section), instance))
+
